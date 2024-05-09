@@ -6,6 +6,8 @@
 //  Copyright © 2016 Kevin Hirsch. All rights reserved.
 //
 
+#if os(iOS)
+
 import UIKit
 
 extension DropDown {
@@ -24,7 +26,10 @@ extension DropDown {
 		appearance.shadowRadius = DPDConstant.UI.Shadow.Radius
 		appearance.animationduration = DPDConstant.Animation.Duration
 		appearance.textColor = DPDConstant.UI.TextColor
+        appearance.selectedTextColor = DPDConstant.UI.SelectedTextColor
 		appearance.textFont = DPDConstant.UI.TextFont
 	}
 
 }
+
+#endif

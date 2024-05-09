@@ -6,6 +6,8 @@
 //  Copyright (c) 2015 Kevin Hirsch. All rights reserved.
 //
 
+#if os(iOS)
+
 import UIKit
 
 public typealias Index = Int
@@ -231,6 +233,27 @@ public final class DropDown: UIView {
 	}
 
 	/**
+	Alias method for `cornerRadius` variable to avoid ambiguity.
+	*/
+	@objc public dynamic func setupCornerRadius(_ radius: CGFloat) {
+		tableViewContainer.layer.cornerRadius = radius
+		tableView.layer.cornerRadius = radius
+		reloadAllComponents()
+	}
+
+	/**
+	The masked corners of DropDown.
+
+	Changing the masked corners automatically reloads the drop down.
+	*/
+	@available(iOS 11.0, *)
+	@objc public dynamic func setupMaskedCorners(_ cornerMask: CACornerMask) {
+		tableViewContainer.layer.maskedCorners = cornerMask
+		tableView.layer.maskedCorners = cornerMask
+		reloadAllComponents()
+	}
+
+	/**
 	The color of the shadow.
 
 	Changing the shadow color automatically reloads the drop down.
@@ -288,12 +311,12 @@ public final class DropDown: UIView {
 	/**
 	The option of the show animation. Only change the caller. To change all drop down's use the static var.
 	*/
-	public var animationEntranceOptions: UIViewAnimationOptions = DropDown.animationEntranceOptions
+	public var animationEntranceOptions: UIView.AnimationOptions = DropDown.animationEntranceOptions
 	
 	/**
 	The option of the hide animation. Only change the caller. To change all drop down's use the static var.
 	*/
-	public var animationExitOptions: UIViewAnimationOptions = DropDown.animationExitOptions
+	public var animationExitOptions: UIView.AnimationOptions = DropDown.animationExitOptions
 
 	/**
 	The downScale transformation of the tableview when the DropDown is appearing
@@ -311,6 +334,15 @@ public final class DropDown: UIView {
 		didSet { reloadAllComponents() }
 	}
 
+    /**
+     The color of the text for selected cells of the drop down.
+     
+     Changing the text color automatically reloads the drop down.
+     */
+    @objc public dynamic var selectedTextColor = DPDConstant.UI.SelectedTextColor {
+        didSet { reloadAllComponents() }
+    }
+    
 	/**
 	The font of the text for each cells of the drop down.
 
@@ -325,13 +357,22 @@ public final class DropDown: UIView {
      
      Changing the cell nib automatically reloads the drop down.
      */
-	public var cellNib = UINib(nibName: "DropDownCell", bundle: Bundle(for: DropDownCell.self)) {
+	public var cellNib = UINib(nibName: "DropDownCell", bundle: bundle) {
 		didSet {
 			tableView.register(cellNib, forCellReuseIdentifier: DPDConstant.ReusableIdentifier.DropDownCell)
 			templateCell = nil
 			reloadAllComponents()
 		}
 	}
+
+  /// Correctly specify Bundle for Swift Packages
+  fileprivate static var bundle: Bundle {
+    #if SWIFT_PACKAGE
+    return Bundle.module
+    #else
+    return Bundle(for: DropDownCell.self)
+    #endif
+  }
 	
 	//MARK: Content
 
@@ -722,7 +763,7 @@ extension DropDown {
 	
 	fileprivate func fittingWidth() -> CGFloat {
 		if templateCell == nil {
-			templateCell = cellNib.instantiate(withOwner: nil, options: nil)[0] as! DropDownCell
+			templateCell = (cellNib.instantiate(withOwner: nil, options: nil)[0] as! DropDownCell)
 		}
 		
 		var maxWidth: CGFloat = 0
@@ -730,7 +771,7 @@ extension DropDown {
 		for index in 0..<dataSource.count {
 			configureCell(templateCell, at: index)
 			templateCell.bounds.size.height = cellHeight
-			let width = templateCell.systemLayoutSizeFitting(UILayoutFittingCompressedSize).width
+			let width = templateCell.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
 			
 			if width > maxWidth {
 				maxWidth = width
@@ -795,7 +836,7 @@ extension DropDown {
 	- returns: Wether it succeed and how much height is needed to display all cells at once.
 	*/
 	@discardableResult
-    public func show(beforeTransform transform: CGAffineTransform? = nil, anchorPoint: CGPoint? = nil) -> (canBeDisplayed: Bool, offscreenHeight: CGFloat?) {
+    public func show(onTopOf window: UIWindow? = nil, beforeTransform transform: CGAffineTransform? = nil, anchorPoint: CGPoint? = nil) -> (canBeDisplayed: Bool, offscreenHeight: CGFloat?) {
 		if self == DropDown.VisibleDropDown && DropDown.VisibleDropDown?.isHidden == false { // added condition - DropDown.VisibleDropDown?.isHidden == false -> to resolve forever hiding dropdown issue when continuous taping on button - Kartik Patel - 2016-12-29
 			return (true, 0)
 		}
@@ -810,9 +851,9 @@ extension DropDown {
 
 		setNeedsUpdateConstraints()
 
-		let visibleWindow = UIWindow.visibleWindow()
+		let visibleWindow = window != nil ? window : UIWindow.visibleWindow()
 		visibleWindow?.addSubview(self)
-		visibleWindow?.bringSubview(toFront: self)
+		visibleWindow?.bringSubviewToFront(self)
 
 		self.translatesAutoresizingMaskIntoConstraints = false
 		visibleWindow?.addUniversalConstraints(format: "|[dropDown]|", views: ["dropDown": self])
@@ -847,10 +888,23 @@ extension DropDown {
 			},
 			completion: nil)
 
-        //deselectRows(at: selectedRowIndices)
-        selectRows(at: selectedRowIndices)
+		accessibilityViewIsModal = true
+		UIAccessibility.post(notification: .screenChanged, argument: self)
+
+		//deselectRows(at: selectedRowIndices)
+		selectRows(at: selectedRowIndices)
 
 		return (layout.canBeDisplayed, layout.offscreenHeight)
+	}
+
+	public override func accessibilityPerformEscape() -> Bool {
+		switch dismissMode {
+		case .automatic, .onTap:
+			cancel()
+			return true
+		case .manual:
+			return false
+		}
 	}
 
 	/// Hides the drop down.
@@ -880,7 +934,8 @@ extension DropDown {
 
 				self.isHidden = true
 				self.removeFromSuperview()
-			})
+				UIAccessibility.post(notification: .screenChanged, argument: nil)
+		})
 	}
 
 	fileprivate func cancel() {
@@ -911,15 +966,17 @@ extension DropDown {
 	and `cellConfiguration` implicitly calls `reloadAllComponents()`.
 	*/
 	public func reloadAllComponents() {
-		tableView.reloadData()
-		setNeedsUpdateConstraints()
+		DispatchQueue.executeOnMainThread {
+			self.tableView.reloadData()
+			self.setNeedsUpdateConstraints()
+		}
 	}
 
 	/// (Pre)selects a row at a certain index.
-	public func selectRow(at index: Index?) {
+	public func selectRow(at index: Index?, scrollPosition: UITableView.ScrollPosition = .none) {
 		if let index = index {
             tableView.selectRow(
-                at: IndexPath(row: index, section: 0), animated: true, scrollPosition: .none
+                at: IndexPath(row: index, section: 0), animated: true, scrollPosition: scrollPosition
             )
             selectedRowIndices.insert(index)
 		} else {
@@ -945,7 +1002,7 @@ extension DropDown {
 			else { return }
         
         // remove from indices
-        if let selectedRowIndex = selectedRowIndices.index(where: { $0 == index  }) {
+        if let selectedRowIndex = selectedRowIndices.firstIndex(where: { $0 == index  }) {
             selectedRowIndices.remove(at: selectedRowIndex)
         }
 
@@ -977,8 +1034,8 @@ extension DropDown {
 	}
 
     //MARK: Objective-C methods for converting the Swift type Index
-    @objc public func selectRow(_ index: Int) {
-        self.selectRow(at:Index(index))
+	@objc public func selectRow(_ index: Int, scrollPosition: UITableView.ScrollPosition = .none) {
+        self.selectRow(at:Index(index), scrollPosition: scrollPosition)
     }
     
     @objc public func clearSelection() {
@@ -1019,6 +1076,8 @@ extension DropDown: UITableViewDataSource, UITableViewDelegate {
 		cell.optionLabel.textColor = textColor
 		cell.optionLabel.font = textFont
 		cell.selectedBackgroundColor = selectionBackgroundColor
+        cell.highlightTextColor = selectedTextColor
+        cell.normalTextColor = textColor
 		
 		if let cellConfiguration = cellConfiguration {
 			cell.optionLabel.text = cellConfiguration(index, dataSource[index])
@@ -1117,12 +1176,12 @@ extension DropDown {
 		NotificationCenter.default.addObserver(
 			self,
 			selector: #selector(keyboardUpdate),
-			name: NSNotification.Name.UIKeyboardWillShow,
+			name: UIResponder.keyboardWillShowNotification,
 			object: nil)
 		NotificationCenter.default.addObserver(
 			self,
 			selector: #selector(keyboardUpdate),
-			name: NSNotification.Name.UIKeyboardWillHide,
+			name: UIResponder.keyboardWillHideNotification,
 			object: nil)
 	}
 
@@ -1136,3 +1195,15 @@ extension DropDown {
 	}
 
 }
+
+private extension DispatchQueue {
+	static func executeOnMainThread(_ closure: @escaping Closure) {
+		if Thread.isMainThread {
+			closure()
+		} else {
+			main.async(execute: closure)
+		}
+	}
+}
+
+#endif
